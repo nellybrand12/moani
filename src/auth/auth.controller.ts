@@ -13,9 +13,14 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { EmailOtpService } from './email-otp.service';
+import { PasswordResetService } from './password-reset.service';
+import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import type { AuthUser } from './strategies/jwt.strategy';
 
 @Controller('auth')
@@ -23,6 +28,8 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
+    private readonly emailOtp: EmailOtpService,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   /**
@@ -72,5 +79,57 @@ export class AuthController {
       ? authHeader.slice(7)
       : authHeader;
     return this.authService.logout(token);
+  }
+
+  /**
+   * POST /auth/email/verify
+   *
+   * Requires a valid Bearer JWT (user must be logged in).
+   * Submits the 6-digit OTP received by email to confirm ownership.
+   * On success sets isEmailVerified = true on the user record.
+   */
+  @Post('email/verify')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async verifyEmail(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: VerifyEmailDto,
+  ) {
+    const currentUser = await this.usersService.findOne(user.id);
+    this.emailOtp.assertHasEmail(currentUser.email);
+    await this.emailOtp.verify(user.id, dto.otp);
+    // Mark the email verified in the database.
+    await this.usersService.updateEmailVerified(user.id, true);
+    return { message: 'Email address verified successfully.' };
+  }
+
+  /**
+   * POST /auth/password/request
+   *
+   * Public endpoint — sends a reset link to the chosen channel.
+   * Rate-limited to 3 requests per minute per IP.
+   */
+  @Post('password/request')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+    return this.passwordReset.request(dto.phone, dto.channel);
+  }
+
+  /**
+   * POST /auth/password/confirm
+   *
+   * Public endpoint — accepts the signed JWT from the reset link
+   * plus the new password (entered twice). Returns 200 on success.
+   */
+  @Post('password/confirm')
+  @HttpCode(HttpStatus.OK)
+  confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto) {
+    return this.passwordReset.confirm(
+      dto.token,
+      dto.newPassword,
+      dto.confirmPassword,
+    );
   }
 }

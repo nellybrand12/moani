@@ -20,9 +20,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   canActivate(context: ExecutionContext) {
     const req = context.switchToHttp().getRequest<Request>();
     const authHeader = req.headers.authorization ?? '';
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : null;
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
     if (token && this.blacklist.isRevoked(token)) {
       throw new UnauthorizedException('Token has been revoked');

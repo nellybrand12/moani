@@ -12,6 +12,7 @@ export class UserEntity {
   id: string;
   phone: string;
   isPhoneVerified: boolean;
+  isEmailVerified: boolean;
   email: string | null;
   firstName: string;
   lastName: string;

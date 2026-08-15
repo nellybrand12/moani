@@ -32,11 +32,15 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     this.db = new PrismaClient({
       adapter: new PrismaPg({
         connectionString: process.env.DATABASE_URL,
-        // Supabase session pooler supports up to 200 connections per project.
-        // Keep max well below that to leave headroom across multiple app instances.
-        max: 10,
-        idleTimeoutMillis: 30_000,
-        connectionTimeoutMillis: 5_000,
+        // Direct connection (port 5432) — no PgBouncer in the middle.
+        // Keep pool small; Supabase free tier caps at 60 server connections total.
+        max: 5,
+        // Direct connections can idle much longer than PgBouncer transaction mode.
+        idleTimeoutMillis: 60_000,
+        // Allow extra time for Supabase cold-starts.
+        connectionTimeoutMillis: 10_000,
+        // Release the pool so the process can exit cleanly.
+        allowExitOnIdle: true,
       }),
     });
   }

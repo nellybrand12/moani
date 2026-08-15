@@ -5,6 +5,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './lib/database/prisma/prisma.module';
+import { MailModule } from './lib/mail/mail.module';
+import { RedisModule } from './redis/redis.module';
 import { TokenBlacklistModule } from './lib/token-blacklist/token-blacklist.module';
 import { UsersModule } from './users/users.module';
 
@@ -12,7 +14,9 @@ import { UsersModule } from './users/users.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 10 }]),
+    RedisModule,
     TokenBlacklistModule,
+    MailModule,
     PrismaModule,
     UsersModule,
     AuthModule,

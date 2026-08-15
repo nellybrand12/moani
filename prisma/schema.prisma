@@ -20,6 +20,7 @@ model User {
   id                 String   @id @default(uuid())
   phone              String   @unique
   isPhoneVerified    Boolean  @default(false)
+  isEmailVerified    Boolean  @default(false)
   email              String?  @unique
   firstName          String
   lastName           String
@@ -31,17 +32,4 @@ model User {
   updatedAt          DateTime @updatedAt
 
   @@map("users")
-}
-
-model PhoneOtp {
-  id         String    @id @default(uuid())
-  phone      String
-  codeHash   String
-  expiresAt  DateTime
-  attempts   Int       @default(0)
-  consumedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([phone])
-  @@map("phone_otps")
 }

@@ -1,38 +1,59 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import * as crypto from 'node:crypto';
-import { PrismaService } from '../lib/database/prisma/prisma.service';
+import { randomInt } from 'crypto';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../redis/redis.constants';
 import { SmsService } from '../notifications/sms.service';
 
-/** Maximum OTP verification attempts before the code is locked */
-const MAX_ATTEMPTS = 5;
+interface OtpRecord {
+  codeHash: string;
+  attempts: number;
+}
 
 /**
  * OtpService — manages OTP generation, storage (hashed), and verification.
  *
  * Raw codes are never stored. Only bcrypt hashes are persisted.
+ * Storage is Redis (Upstash, TLS) with native TTL — no Postgres I/O.
  * TTL comes from OTP_TTL_MINUTES env var (default 10 minutes).
  */
 @Injectable()
 export class OtpService {
+  private readonly ttlSeconds: number;
+  private readonly maxAttempts = 5;
+
   constructor(
-    private readonly prisma: PrismaService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly sms: SmsService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.ttlSeconds = Number(this.config.get('OTP_TTL_MINUTES') ?? 10) * 60;
+  }
+
+  private key(phone: string): string {
+    return `otp:${phone}`;
+  }
 
   /**
-   * Generates a 6-digit OTP, hashes it, stores it in phone_otps,
+   * Generates a 6-digit OTP, hashes it, stores it in Redis with TTL,
    * and sends it to the provided phone number.
+   *
+   * A fresh send always overwrites and un-expires any previous code
+   * for this phone — only the newest code is ever valid.
    */
   async send(phone: string): Promise<void> {
-    const ttlMinutes = parseInt(process.env['OTP_TTL_MINUTES'] ?? '10', 10);
-    const code = crypto.randomInt(100_000, 1_000_000).toString();
+    const code = randomInt(100_000, 1_000_000).toString();
     const codeHash = await bcrypt.hash(code, 10);
-    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1_000);
+    const record: OtpRecord = { codeHash, attempts: 0 };
 
-    await this.prisma.db.phoneOtp.create({
-      data: { phone, codeHash, expiresAt },
-    });
+    // SET + EX stores the record and sets its expiry atomically.
+    await this.redis.set(
+      this.key(phone),
+      JSON.stringify(record),
+      'EX',
+      this.ttlSeconds,
+    );
 
     await this.sms.send(phone, `Your Moani verification code is: ${code}`);
   }
@@ -41,47 +62,43 @@ export class OtpService {
    * Verifies a submitted OTP code for a given phone number.
    *
    * Throws UnauthorizedException if:
-   *  - no unconsumed OTP exists for the phone
-   *  - the OTP has expired
-   *  - attempts >= MAX_ATTEMPTS
+   *  - no OTP key exists (never sent, expired, or already consumed)
+   *  - attempts >= maxAttempts
    *  - the code does not match the stored hash
    *
-   * On success, marks the OTP as consumed (consumedAt = now).
+   * On success, deletes the key so the code can never be replayed.
    */
   async verify(phone: string, code: string): Promise<void> {
-    const otp = await this.prisma.db.phoneOtp.findFirst({
-      where: { phone, consumedAt: null },
-      orderBy: { createdAt: 'desc' },
-    });
+    const raw = await this.redis.get(this.key(phone));
 
-    if (!otp) {
-      throw new UnauthorizedException('No pending OTP for this phone number');
+    if (!raw) {
+      // Covers "never sent", "expired" (Redis already deleted it), and
+      // "already consumed" (verify() deletes on success) in one check.
+      throw new UnauthorizedException(
+        'OTP expired or not found, request a new one',
+      );
     }
 
-    if (otp.expiresAt < new Date()) {
-      throw new UnauthorizedException('OTP has expired');
-    }
+    const record: OtpRecord = JSON.parse(raw) as OtpRecord;
 
-    if (otp.attempts >= MAX_ATTEMPTS) {
+    if (record.attempts >= this.maxAttempts) {
+      await this.redis.del(this.key(phone));
       throw new UnauthorizedException(
         'Too many failed attempts — request a new code',
       );
     }
 
-    const isMatch = await bcrypt.compare(code, otp.codeHash);
+    const isMatch = await bcrypt.compare(code, record.codeHash);
 
     if (!isMatch) {
-      await this.prisma.db.phoneOtp.update({
-        where: { id: otp.id },
-        data: { attempts: { increment: 1 } },
-      });
+      record.attempts += 1;
+      // KEEPTTL: update the attempts count without resetting the
+      // expiry clock — a bad guess shouldn't buy the attacker more time.
+      await this.redis.set(this.key(phone), JSON.stringify(record), 'KEEPTTL');
       throw new UnauthorizedException('Invalid OTP');
     }
 
-    // Mark consumed so the same code cannot be reused
-    await this.prisma.db.phoneOtp.update({
-      where: { id: otp.id },
-      data: { consumedAt: new Date() },
-    });
+    // Consume immediately so this code can never be replayed.
+    await this.redis.del(this.key(phone));
   }
 }

@@ -11,6 +11,6 @@ export default defineConfig({
   datasource: {
     // Used by the Prisma CLI (migrate dev / migrate deploy / db push)
     // Always point at a direct or session-mode URL — never the transaction pooler
-    url: process.env['DIRECT_URL'],
+    url: process.env['MIGRATE_URL'],
   },
 });

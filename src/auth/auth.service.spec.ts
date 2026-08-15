@@ -41,7 +41,9 @@ const makeOtp = () => ({
 
 const makeJwt = () => ({
   sign: jest.fn().mockReturnValue('signed.jwt.token'),
-  decode: jest.fn().mockReturnValue({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+  decode: jest
+    .fn()
+    .mockReturnValue({ exp: Math.floor(Date.now() / 1000) + 3600 }),
 });
 
 const makeBlacklist = () => ({
