@@ -1,7 +1,7 @@
 generator client {
   provider     = "prisma-client"
   output       = "../generated/prisma"
-  moduleFormat = "cjs"             // NestJS runs on CommonJS
+  moduleFormat = "cjs" // NestJS runs on CommonJS
 }
 
 datasource db {
@@ -9,11 +9,39 @@ datasource db {
   // url and directUrl live in prisma.config.ts in Prisma v7
 }
 
-// ── Starter model — replace / extend with your real schema ──────────────────
+// ── Enums ────────────────────────────────────────────────────────────────────
+enum Role {
+  USER
+  ADMIN
+}
+
+// ── Models ───────────────────────────────────────────────────────────────────
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  phone              String   @unique
+  isPhoneVerified    Boolean  @default(false)
+  email              String?  @unique
+  firstName          String
+  lastName           String
+  passwordHash       String
+  dateOfBirth        DateTime
+  transactionPinHash String
+  role               Role     @default(USER)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("users")
+}
+
+model PhoneOtp {
+  id         String    @id @default(uuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone])
+  @@map("phone_otps")
 }
