@@ -1,0 +1,19 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"             // NestJS runs on CommonJS
+}
+
+datasource db {
+  provider = "postgresql"
+  // url and directUrl live in prisma.config.ts in Prisma v7
+}
+
+// ── Starter model — replace / extend with your real schema ──────────────────
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
