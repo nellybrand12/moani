@@ -1,63 +1,85 @@
-# compiled output
-/dist
-/node_modules
-/build
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+jspm_packages/
+web_modules/
 
-# Logs
-logs
+# ── Build & Compiled Output ──────────────────────────────────────────────────
+/dist/
+/build/
+out/
+*.tsbuildinfo
+.tsbuildinfo
+
+# ── Prisma & Generated Code ──────────────────────────────────────────────────
+/generated/
+generated/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# ── Environment & Secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.template
+
+# ── Logs & Debugging ─────────────────────────────────────────────────────────
+logs/
 *.log
 npm-debug.log*
-pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# OS
+# ── Testing & Coverage ───────────────────────────────────────────────────────
+/coverage/
+/.nyc_output/
+*.lcov
+.clinic/
+
+# ── Caches & Temporary Files ─────────────────────────────────────────────────
+.temp/
+.tmp/
+.cache/
+.parcel-cache/
+.eslintcache
+pids/
+*.pid
+*.pid.lock
+*.seed
+
+# ── Operating System ─────────────────────────────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Tests
-/coverage
-/.nyc_output
-
-# IDEs and editors
-/.idea
+# ── IDEs & Editors ───────────────────────────────────────────────────────────
+.idea/
 .project
 .classpath
 .c9/
 *.launch
 .settings/
 *.sublime-workspace
+*.sublime-project
+*.swp
+*.swo
+*~
 
-# IDE - VSCode
+# VS Code (ignore workspace user state, allow shared project configs)
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
-
-# temp directory
-.temp
-.tmp
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# AI Agent Skills
+# ── AI Tooling & Local Agent Caches ──────────────────────────────────────────
 .agents
 .claude
 .windsurf
-
-# Diagnostic reports (https://nodejs.org/api/report.html)
-report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
-
-/generated/prisma

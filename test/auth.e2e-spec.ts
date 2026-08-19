@@ -15,15 +15,20 @@ import * as bcrypt from 'bcrypt';
 import { Role } from '../generated/prisma/client';
 import { AuthModule } from '../src/auth/auth.module';
 import { OtpService } from '../src/auth/otp.service';
+import { PrismaModule } from '../src/lib/database/prisma/prisma.module';
 import { PrismaService } from '../src/lib/database/prisma/prisma.service';
+import { MailModule } from '../src/lib/mail/mail.module';
+import { NotificationsModule } from '../src/notifications/notifications.module';
+import { RedisModule } from '../src/redis/redis.module';
+import { TokenBlacklistModule } from '../src/lib/token-blacklist/token-blacklist.module';
 import { UsersModule } from '../src/users/users.module';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
-const TEST_PHONE = '+237600000099';
+const TEST_PHONE = '+237670000099';
 const TEST_PASSWORD = 'Secure1pass';
 const TEST_OTP = '123456';
-const USER_ID = 'test-uuid-e2e-0001';
+const USER_ID = '00000000-0000-0000-0000-000000000001';
 
 const hashedPassword = bcrypt.hashSync(TEST_PASSWORD, 1);
 
@@ -34,6 +39,7 @@ const storedUser = {
   email: null,
   firstName: 'E2E',
   lastName: 'User',
+  profilePicture: null,
   passwordHash: hashedPassword,
   dateOfBirth: new Date('1995-06-15'),
   transactionPinHash: bcrypt.hashSync('1234', 1),
@@ -90,6 +96,11 @@ describe('Auth (e2e)', () => {
           secret: 'e2e-test-secret',
           signOptions: { expiresIn: '1h' },
         }),
+        RedisModule,
+        TokenBlacklistModule,
+        PrismaModule,
+        MailModule,
+        NotificationsModule,
         AuthModule,
         UsersModule,
       ],
@@ -194,7 +205,7 @@ describe('Auth (e2e)', () => {
     it("returns 403 when a user tries to access another user's resource", async () => {
       mockPrisma.db.user.findUnique.mockResolvedValue(storedUser);
 
-      const OTHER_ID = 'other-user-uuid-9999';
+      const OTHER_ID = '00000000-0000-0000-0000-000000000002';
 
       await request(app.getHttpServer())
         .get(`/users/${OTHER_ID}`)

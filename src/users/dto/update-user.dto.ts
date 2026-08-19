@@ -2,6 +2,7 @@ import {
   IsEmail,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -9,8 +10,8 @@ import {
 /**
  * UpdateUserDto — fields the user may update via PATCH /users/:id.
  *
- * Deliberately excludes phone, password, and transactionPin.
- * Those require re-verification / re-auth and belong in dedicated endpoints.
+ * Supports updating firstName, lastName, email, profilePicture,
+ * and transactionPin (which requires password for verification).
  */
 export class UpdateUserDto {
   @IsOptional()
@@ -28,4 +29,21 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  profilePicture?: string;
+
+  /** New 4 to 6 digit transaction PIN */
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4,6}$/, {
+    message: 'transactionPin must be 4 to 6 digits',
+  })
+  transactionPin?: string;
+
+  /** Current account password required to verify identity when changing transaction PIN */
+  @IsOptional()
+  @IsString()
+  password?: string;
 }

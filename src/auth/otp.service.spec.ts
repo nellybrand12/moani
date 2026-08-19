@@ -2,6 +2,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SmsService } from '../notifications/sms.service';
+import { WhatsappService } from '../notifications/whatsapp.service';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import { OtpService } from './otp.service';
 
@@ -18,6 +19,10 @@ const makeSms = () => ({
   send: jest.fn().mockResolvedValue(undefined),
 });
 
+const makeWhatsapp = () => ({
+  send: jest.fn().mockResolvedValue(undefined),
+});
+
 const makeConfig = (otpTtl = '10') => ({
   get: jest.fn().mockReturnValue(otpTtl),
   getOrThrow: jest.fn().mockReturnValue(otpTtl),
@@ -29,16 +34,19 @@ describe('OtpService', () => {
   let service: OtpService;
   let redis: ReturnType<typeof makeRedis>;
   let sms: ReturnType<typeof makeSms>;
+  let whatsapp: ReturnType<typeof makeWhatsapp>;
 
   beforeEach(async () => {
     redis = makeRedis();
     sms = makeSms();
+    whatsapp = makeWhatsapp();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OtpService,
         { provide: REDIS_CLIENT, useValue: redis },
         { provide: SmsService, useValue: sms },
+        { provide: WhatsappService, useValue: whatsapp },
         { provide: ConfigService, useValue: makeConfig() },
       ],
     }).compile();
@@ -52,7 +60,7 @@ describe('OtpService', () => {
     it('stores a hashed code (bcrypt), never the raw code', async () => {
       await service.send('+237600000001');
 
-      const [_key, value] = redis.set.mock.calls[0] as [
+      const [, value] = redis.set.mock.calls[0] as [
         string,
         string,
         ...unknown[],
@@ -82,7 +90,7 @@ describe('OtpService', () => {
       expect(key).toBe('otp:+237600000001');
     });
 
-    it('sends an SMS after storing the OTP', async () => {
+    it('sends an SMS by default after storing the OTP', async () => {
       await service.send('+237600000001');
 
       expect(sms.send).toHaveBeenCalledTimes(1);
@@ -90,6 +98,44 @@ describe('OtpService', () => {
         '+237600000001',
         expect.stringContaining('verification code'),
       );
+      expect(whatsapp.send).not.toHaveBeenCalled();
+    });
+
+    it('sends via WhatsApp when channel is whatsapp', async () => {
+      await service.send('+237600000001', 'whatsapp');
+
+      expect(whatsapp.send).toHaveBeenCalledTimes(1);
+      expect(whatsapp.send).toHaveBeenCalledWith(
+        '+237600000001',
+        expect.stringContaining('verification code'),
+      );
+      expect(sms.send).not.toHaveBeenCalled();
+    });
+
+    it('falls back to SMS when WhatsApp delivery throws an error', async () => {
+      whatsapp.send.mockRejectedValueOnce(
+        new Error('Number not on WhatsApp or delivery failed'),
+      );
+
+      await service.send('+237600000001', 'whatsapp');
+
+      expect(whatsapp.send).toHaveBeenCalledTimes(1);
+      expect(sms.send).toHaveBeenCalledTimes(1);
+      expect(sms.send).toHaveBeenCalledWith(
+        '+237600000001',
+        expect.stringContaining('verification code'),
+      );
+    });
+
+    it('sends via SMS when explicitly requested', async () => {
+      await service.send('+237600000001', 'sms');
+
+      expect(sms.send).toHaveBeenCalledTimes(1);
+      expect(sms.send).toHaveBeenCalledWith(
+        '+237600000001',
+        expect.stringContaining('verification code'),
+      );
+      expect(whatsapp.send).not.toHaveBeenCalled();
     });
   });
 
@@ -163,3 +209,4 @@ describe('OtpService', () => {
     });
   });
 });
+

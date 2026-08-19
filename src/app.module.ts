@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './lib/database/prisma/prisma.module';
 import { MailModule } from './lib/mail/mail.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { RedisModule } from './redis/redis.module';
 import { TokenBlacklistModule } from './lib/token-blacklist/token-blacklist.module';
 import { UsersModule } from './users/users.module';
@@ -17,6 +18,7 @@ import { UsersModule } from './users/users.module';
     RedisModule,
     TokenBlacklistModule,
     MailModule,
+    NotificationsModule,
     PrismaModule,
     UsersModule,
     AuthModule,
@@ -25,3 +27,4 @@ import { UsersModule } from './users/users.module';
   providers: [AppService],
 })
 export class AppModule {}
+

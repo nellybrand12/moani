@@ -17,6 +17,7 @@ const mockUser = {
   email: null,
   firstName: 'Jane',
   lastName: 'Doe',
+  profilePicture: null,
   passwordHash: '$2b$10$hashed',
   dateOfBirth: new Date('1995-01-01'),
   transactionPinHash: '$2b$10$pinHashed',
@@ -77,6 +78,40 @@ describe('AuthService', () => {
     }).compile();
 
     service = module.get(AuthService);
+  });
+
+  // ── sendOtp ────────────────────────────────────────────────────────────────
+
+  describe('sendOtp', () => {
+    it('sends OTP with default channel when no channel provided', async () => {
+      prisma.db.user.findUnique.mockResolvedValue(null);
+
+      const result = await service.sendOtp({ phone: '+237600000001' });
+
+      expect(result).toEqual({ message: 'OTP sent successfully' });
+      expect(otp.send).toHaveBeenCalledWith('+237600000001', 'sms');
+    });
+
+    it('sends OTP via whatsapp channel when specified', async () => {
+      prisma.db.user.findUnique.mockResolvedValue(null);
+
+      const result = await service.sendOtp({
+        phone: '+237600000001',
+        channel: 'whatsapp',
+      });
+
+      expect(result).toEqual({ message: 'OTP sent successfully' });
+      expect(otp.send).toHaveBeenCalledWith('+237600000001', 'whatsapp');
+    });
+
+    it('throws ConflictException when phone is already registered', async () => {
+      prisma.db.user.findUnique.mockResolvedValue(mockUser);
+
+      await expect(service.sendOtp({ phone: '+237600000001' })).rejects.toThrow(
+        ConflictException,
+      );
+      expect(otp.send).not.toHaveBeenCalled();
+    });
   });
 
   // ── register ───────────────────────────────────────────────────────────────

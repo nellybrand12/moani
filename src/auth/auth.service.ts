@@ -39,7 +39,7 @@ export class AuthService {
       throw new ConflictException('Phone number is already registered');
     }
 
-    await this.otpService.send(dto.phone);
+    await this.otpService.send(dto.phone, dto.channel ?? 'sms');
     return { message: 'OTP sent successfully' };
   }
 

@@ -42,9 +42,12 @@ export class WhatsappService {
       return;
     }
     await this.whatsapp.sendMessage({
-      from: this.from,
-      to: phone,
-      message,
+      waNumber: this.from,
+      phoneNumber: phone,
+      body: {
+        message,
+      },
     });
   }
 }
+

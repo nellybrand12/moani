@@ -16,6 +16,7 @@ export class UserEntity {
   email: string | null;
   firstName: string;
   lastName: string;
+  profilePicture: string | null;
   dateOfBirth: Date;
   role: Role;
   createdAt: Date;

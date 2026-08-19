@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -13,26 +14,26 @@ import { MailService } from '../lib/mail/mail.service';
 import { SmsService } from '../notifications/sms.service';
 import { WhatsappService } from '../notifications/whatsapp.service';
 import { REDIS_CLIENT } from '../redis/redis.constants';
-
-export type ResetChannel = 'sms' | 'whatsapp' | 'email';
+import type { ResetChannel } from './dto/request-password-reset.dto';
 
 const BCRYPT_ROUNDS = 10;
 // Password reset token TTL: 5 minutes (per spec — shorter than phone OTP)
 const RESET_TTL_SECONDS = 300;
 
 /**
- * PasswordResetService — multi-channel password reset flow.
+ * PasswordResetService — multi-channel password reset flow (SMS, WhatsApp, Email).
  *
  * request()  — looks up the user, mints a signed JWT, stores it in Redis,
- *              and delivers the link via the chosen channel.
+ *              and delivers the reset link via SMS, WhatsApp, or verified email.
  * confirm()  — verifies the JWT + Redis key, validates the new password,
  *              writes the new hash, and consumes the token.
  *
  * Redis key: pwd-reset:<userId>  (TTL 300 s)
- * Token:     signed JWT { sub: userId } exp 300 s
+ * Token:     signed JWT { sub: userId, type: 'pwd-reset' } exp 300 s
  */
 @Injectable()
 export class PasswordResetService {
+  private readonly logger = new Logger(PasswordResetService.name);
   private readonly frontendUrl: string;
 
   constructor(
@@ -58,11 +59,12 @@ export class PasswordResetService {
    * Looks up the user by phone. If not found, returns the same success
    * response as a real request to prevent phone enumeration (AC-8).
    *
-   * Validates that the email channel is only used when isEmailVerified (AC-3).
+   * Delivers reset link via requested channel (sms, whatsapp, email).
+   * Email channel requires isEmailVerified === true.
    */
   async request(
     phone: string,
-    channel: ResetChannel,
+    channel: ResetChannel = 'sms',
   ): Promise<{ message: string }> {
     const user = await this.prisma.db.user.findUnique({
       where: { phone },
@@ -79,7 +81,7 @@ export class PasswordResetService {
     if (channel === 'email') {
       if (!user.isEmailVerified || !user.email) {
         throw new BadRequestException(
-          'Email channel is only available after your email address has been verified.',
+          'Password reset requires a verified email address on your account.',
         );
       }
     }
@@ -96,19 +98,26 @@ export class PasswordResetService {
     const link = `${this.frontendUrl}/reset-password?token=${token}`;
     const text = `Reset your Moani password by clicking this link (expires in 5 minutes):\n${link}`;
 
-    if (channel === 'sms') {
-      await this.sms.send(phone, text);
-    } else if (channel === 'whatsapp') {
-      await this.whatsapp.send(phone, text);
-    } else {
+    if (channel === 'email' && user.email) {
       await this.mail.send(
-        user.email!,
+        user.email,
         'Reset your Moani password',
         text,
         `<p>Reset your Moani password:</p>
          <p><a href="${link}">Click here to reset your password</a></p>
          <p>This link expires in 5 minutes. If you didn't request this, ignore it.</p>`,
       );
+    } else if (channel === 'whatsapp') {
+      try {
+        await this.whatsapp.send(phone, text);
+      } catch (error) {
+        this.logger.warn(
+          `WhatsApp reset link delivery to ${phone} failed (${(error as Error)?.message ?? error}). Falling back to SMS.`,
+        );
+        await this.sms.send(phone, text);
+      }
+    } else {
+      await this.sms.send(phone, text);
     }
 
     return {
@@ -183,3 +192,4 @@ export class PasswordResetService {
     };
   }
 }
+

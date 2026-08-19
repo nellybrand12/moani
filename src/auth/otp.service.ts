@@ -1,10 +1,17 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import { SmsService } from '../notifications/sms.service';
+import { WhatsappService } from '../notifications/whatsapp.service';
+import type { OtpChannel } from './dto/send-otp.dto';
 
 interface OtpRecord {
   codeHash: string;
@@ -17,15 +24,19 @@ interface OtpRecord {
  * Raw codes are never stored. Only bcrypt hashes are persisted.
  * Storage is Redis (Upstash, TLS) with native TTL — no Postgres I/O.
  * TTL comes from OTP_TTL_MINUTES env var (default 10 minutes).
+ *
+ * Delivery is supported via WhatsApp and SMS to the user's phone number.
  */
 @Injectable()
 export class OtpService {
+  private readonly logger = new Logger(OtpService.name);
   private readonly ttlSeconds: number;
   private readonly maxAttempts = 5;
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly sms: SmsService,
+    private readonly whatsapp: WhatsappService,
     private readonly config: ConfigService,
   ) {
     this.ttlSeconds = Number(this.config.get('OTP_TTL_MINUTES') ?? 10) * 60;
@@ -37,12 +48,12 @@ export class OtpService {
 
   /**
    * Generates a 6-digit OTP, hashes it, stores it in Redis with TTL,
-   * and sends it to the provided phone number.
+   * and sends it to the provided phone number via SMS or WhatsApp.
    *
    * A fresh send always overwrites and un-expires any previous code
    * for this phone — only the newest code is ever valid.
    */
-  async send(phone: string): Promise<void> {
+  async send(phone: string, channel: OtpChannel = 'sms'): Promise<void> {
     const code = randomInt(100_000, 1_000_000).toString();
     const codeHash = await bcrypt.hash(code, 10);
     const record: OtpRecord = { codeHash, attempts: 0 };
@@ -55,7 +66,20 @@ export class OtpService {
       this.ttlSeconds,
     );
 
-    await this.sms.send(phone, `Your Moani verification code is: ${code}`);
+    const message = `Your Moani verification code is: ${code}`;
+
+    if (channel === 'whatsapp') {
+      try {
+        await this.whatsapp.send(phone, message);
+      } catch (error) {
+        this.logger.warn(
+          `WhatsApp delivery to ${phone} failed (${(error as Error)?.message ?? error}). Falling back to SMS.`,
+        );
+        await this.sms.send(phone, message);
+      }
+    } else {
+      await this.sms.send(phone, message);
+    }
   }
 
   /**
@@ -102,3 +126,4 @@ export class OtpService {
     await this.redis.del(this.key(phone));
   }
 }
+

@@ -24,6 +24,7 @@ model User {
   email              String?  @unique
   firstName          String
   lastName           String
+  profilePicture     String?  @default("https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png")
   passwordHash       String
   dateOfBirth        DateTime
   transactionPinHash String

@@ -16,11 +16,13 @@ export class SmsService {
   private readonly logger = new Logger(SmsService.name);
 
   private readonly sms: any;
+  private readonly senderId?: string;
   private readonly isStub: boolean;
 
   constructor() {
     const apiKey = process.env['AT_API_KEY'];
     const username = process.env['AT_USERNAME'];
+    this.senderId = process.env['AT_SENDER_ID'];
     this.isStub = !apiKey || apiKey === 'dev';
 
     if (this.isStub) {
@@ -39,6 +41,10 @@ export class SmsService {
       this.logger.log(`[SMS STUB] To: ${phone} | Message: ${message}`);
       return;
     }
-    await this.sms.send({ to: [phone], message });
+    await this.sms.send({
+      to: [phone],
+      message,
+      ...(this.senderId ? { from: this.senderId } : {}),
+    });
   }
 }
