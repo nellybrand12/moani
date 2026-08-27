@@ -19,19 +19,26 @@ patterns and architecture decisions, not generic Node.js approaches.
 - Shared guards, interceptors, decorators go in src/common/
 - Use Nest CLI: nest g module / nest g service / nest g controller
 
+## Specs
+
+Stored in `docs/specs/`. Format: `docs/specs/NNNN-<slug>/` or `docs/specs/NNNN-<slug>.md`.
+
 ## Skills
 
 Do not load any skill by default. Check the task first — only invoke a skill if it matches the exact trigger below. Never invoke a skill just because it exists.
 
-- `/architect` — before building something non-trivial with no plan yet
-- `/review` — when a feature is done and needs a production check
-- `/recover` — when something is broken and the fix isn't obvious
-- `/remember` — at the start of a new session to restore context,
-  and at the end to save progress
+- `/scope` — turn a product idea or milestone into coarse scope in `docs/scope/` and track progress
+- `/architect` — before building something non-trivial with no plan yet; designs and writes specs to `docs/specs/`
+- `/develop` — build a feature, API, service, or module from an approved design or spec
+- `/test` — write comprehensive test suites (unit, integration, e2e) for changed code
+- `/check` (`/check verify` | `/check review`) — verify runtime behavior against spec or run a fresh senior code review before PR
+- `/debug` — find and fix root causes when something is broken or tests fail
+- `/document` — write PR descriptions, changelogs, release notes, or postmortems
+- `/sync` — keep durable knowledge, `AGENTS.md`, and specs synchronized around merge
+- `/audit` — scan and bootstrap or gap-fill `AGENTS.md` context files
+- `prisma-*` — reference for Prisma ORM CLI, queries, migrations, and PostgreSQL configuration
 
 ## Session continuity
 
-REQUIRED — do not skip, do not wait to be asked:
-
-- **First action of every session:** run `/remember restore` before doing anything else.
-- **Last action of every session:** run `/remember save` before closing.
+- At session start: read `AGENTS.md` and active specs in `docs/specs/` to restore full project context.
+- At milestone / merge completion: run `/sync` to keep durable knowledge and context files up to date.
