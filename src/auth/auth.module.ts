@@ -4,11 +4,13 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import type { StringValue } from 'ms';
 import { MailModule } from '../lib/mail/mail.module';
+import { TokenBlacklistModule } from '../lib/token-blacklist/token-blacklist.module';
 import { SmsService } from '../notifications/sms.service';
 import { WhatsappService } from '../notifications/whatsapp.service';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailOtpService } from './email-otp.service';
 import { OtpService } from './otp.service';
 import { PasswordResetService } from './password-reset.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -18,6 +20,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     PassportModule,
     UsersModule,
     MailModule,
+    TokenBlacklistModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -33,6 +36,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   providers: [
     AuthService,
     OtpService,
+    EmailOtpService,
     JwtStrategy,
     SmsService,
     WhatsappService,

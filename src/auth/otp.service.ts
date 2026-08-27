@@ -126,4 +126,3 @@ export class OtpService {
     await this.redis.del(this.key(phone));
   }
 }
-

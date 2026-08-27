@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
@@ -15,12 +16,14 @@ import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { EmailOtpService } from './email-otp.service';
 import { PasswordResetService } from './password-reset.service';
-import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
+import { ChooseResetMethodDto } from './dto/choose-reset-method.dto';
+import { CompletePasswordResetDto } from './dto/complete-password-reset.dto';
+import { InitiatePasswordResetDto } from './dto/initiate-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
 import type { AuthUser } from './strategies/jwt.strategy';
 
 @Controller('auth')
@@ -103,31 +106,81 @@ export class AuthController {
     return { message: 'Email address verified successfully.' };
   }
 
+  // ── Forgot-password flow ──────────────────────────────────────────────────
+
   /**
-   * POST /auth/password/request
+   * POST /auth/password-reset/initiate
    *
-   * Public endpoint — sends a reset link to the chosen channel.
+   * Step 1: Submit phone number → receive a resetSessionId JWT.
+   * Always returns 200 with the same shape, regardless of whether the phone
+   * number belongs to a real account (anti-enumeration).
+   *
    * Rate-limited to 3 requests per minute per IP.
    */
-  @Post('password/request')
+  @Post('password-reset/initiate')
   @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
-  requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
-    return this.passwordReset.request(dto.phone, dto.channel);
+  initiatePasswordReset(@Body() dto: InitiatePasswordResetDto) {
+    return this.passwordReset.initiate(dto.phoneNumber);
   }
 
   /**
-   * POST /auth/password/confirm
+   * POST /auth/password-reset/method
    *
-   * Public endpoint — accepts the signed JWT from the reset link
-   * plus the new password (entered twice). Returns 200 on success.
+   * Step 2: Choose OTP (SMS) or EMAIL_LINK.
+   * Always returns the same generic success message to avoid leaking email
+   * existence/verification status. Rate-limited to 3/min per IP.
    */
-  @Post('password/confirm')
+  @Post('password-reset/method')
   @HttpCode(HttpStatus.OK)
-  confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto) {
-    return this.passwordReset.confirm(
-      dto.token,
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  chooseResetMethod(@Body() dto: ChooseResetMethodDto) {
+    return this.passwordReset.chooseMethod(dto.resetSessionId, dto.method);
+  }
+
+  /**
+   * POST /auth/password-reset/verify-otp
+   *
+   * Step 3a: Submit the 6-digit OTP received by SMS.
+   * Rate-limited per session by the service (5 attempts then session locked).
+   * On success returns a single-use resetToken.
+   */
+  @Post('password-reset/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  verifyResetOtp(@Body() dto: VerifyResetOtpDto) {
+    return this.passwordReset.verifyOtp(dto.resetSessionId, dto.otp);
+  }
+
+  /**
+   * GET /auth/password-reset/email/verify?token=...&sessionId=...
+   *
+   * Step 3b: Validate the emailed reset link.
+   * On success returns the same single-use resetToken as the OTP path,
+   * so both paths converge on POST /auth/password-reset/complete.
+   */
+  @Get('password-reset/email/verify')
+  @HttpCode(HttpStatus.OK)
+  verifyEmailResetToken(
+    @Query('sessionId') sessionId: string,
+    @Query('token') token: string,
+  ) {
+    return this.passwordReset.verifyEmailToken(sessionId, token);
+  }
+
+  /**
+   * POST /auth/password-reset/complete
+   *
+   * Step 4: Set the new password using the single-use resetToken.
+   * Validates password match + policy, updates the hash, invalidates the
+   * resetToken, and sends a "password changed" notification.
+   */
+  @Post('password-reset/complete')
+  @HttpCode(HttpStatus.OK)
+  completePasswordReset(@Body() dto: CompletePasswordResetDto) {
+    return this.passwordReset.complete(
+      dto.resetToken,
       dto.newPassword,
       dto.confirmPassword,
     );

@@ -15,6 +15,12 @@ enum Role {
   ADMIN
 }
 
+/// Which verification method the user chose in the forgot-password flow.
+enum ResetMethod {
+  OTP
+  EMAIL_LINK
+}
+
 // ── Models ───────────────────────────────────────────────────────────────────
 model User {
   id                 String   @id @default(uuid())
@@ -32,5 +38,32 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  passwordResetSessions PasswordResetSession[]
+
   @@map("users")
+}
+
+/// One row per forgot-password attempt.
+/// Created in `initiate`, updated as the user progresses through the flow,
+/// consumed (usedAt set) on success or lockout.
+model PasswordResetSession {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Null until the user calls /method.
+  method         ResetMethod?
+  /// bcrypt hash of the 6-digit OTP — set when method = OTP.
+  otpHash        String?
+  /// bcrypt hash of the 64-byte random email token — set when method = EMAIL_LINK.
+  emailTokenHash String?
+  /// Hard expiry — checked on every downstream step.
+  expiresAt      DateTime
+  /// Set when the session is consumed (OTP verified, email link verified) or
+  /// locked out (>= maxAttempts). Null means the session is still live.
+  usedAt         DateTime?
+  /// Incremented on each wrong OTP guess; capped at 5 before lockout.
+  attempts       Int          @default(0)
+  createdAt      DateTime     @default(now())
+
+  @@map("password_reset_sessions")
 }
