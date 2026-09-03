@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -17,6 +18,7 @@ const makeRedis = () => ({
 
 const makeSms = () => ({
   send: jest.fn().mockResolvedValue(undefined),
+  sendOtp: jest.fn().mockResolvedValue(undefined),
 });
 
 const makeWhatsapp = () => ({
@@ -93,49 +95,40 @@ describe('OtpService', () => {
     it('sends an SMS by default after storing the OTP', async () => {
       await service.send('+237600000001');
 
-      expect(sms.send).toHaveBeenCalledTimes(1);
-      expect(sms.send).toHaveBeenCalledWith(
-        '+237600000001',
-        expect.stringContaining('verification code'),
-      );
-      expect(whatsapp.send).not.toHaveBeenCalled();
+      expect(sms.sendOtp).toHaveBeenCalledTimes(1);
+      expect(sms.sendOtp).toHaveBeenCalledWith({
+        phone: '+237600000001',
+        code: expect.stringMatching(/^\d{6}$/),
+        flow: 'login',
+        channel: 'sms',
+        expiresInMinutes: 10,
+      });
     });
 
     it('sends via WhatsApp when channel is whatsapp', async () => {
       await service.send('+237600000001', 'whatsapp');
 
-      expect(whatsapp.send).toHaveBeenCalledTimes(1);
-      expect(whatsapp.send).toHaveBeenCalledWith(
-        '+237600000001',
-        expect.stringContaining('verification code'),
-      );
-      expect(sms.send).not.toHaveBeenCalled();
-    });
-
-    it('falls back to SMS when WhatsApp delivery throws an error', async () => {
-      whatsapp.send.mockRejectedValueOnce(
-        new Error('Number not on WhatsApp or delivery failed'),
-      );
-
-      await service.send('+237600000001', 'whatsapp');
-
-      expect(whatsapp.send).toHaveBeenCalledTimes(1);
-      expect(sms.send).toHaveBeenCalledTimes(1);
-      expect(sms.send).toHaveBeenCalledWith(
-        '+237600000001',
-        expect.stringContaining('verification code'),
-      );
+      expect(sms.sendOtp).toHaveBeenCalledTimes(1);
+      expect(sms.sendOtp).toHaveBeenCalledWith({
+        phone: '+237600000001',
+        code: expect.stringMatching(/^\d{6}$/),
+        flow: 'login',
+        channel: 'whatsapp',
+        expiresInMinutes: 10,
+      });
     });
 
     it('sends via SMS when explicitly requested', async () => {
       await service.send('+237600000001', 'sms');
 
-      expect(sms.send).toHaveBeenCalledTimes(1);
-      expect(sms.send).toHaveBeenCalledWith(
-        '+237600000001',
-        expect.stringContaining('verification code'),
-      );
-      expect(whatsapp.send).not.toHaveBeenCalled();
+      expect(sms.sendOtp).toHaveBeenCalledTimes(1);
+      expect(sms.sendOtp).toHaveBeenCalledWith({
+        phone: '+237600000001',
+        code: expect.stringMatching(/^\d{6}$/),
+        flow: 'login',
+        channel: 'sms',
+        expiresInMinutes: 10,
+      });
     });
   });
 
@@ -209,4 +202,3 @@ describe('OtpService', () => {
     });
   });
 });
-

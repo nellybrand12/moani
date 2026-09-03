@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -42,7 +44,9 @@ const makePrisma = () => ({
 const makeJwt = () => ({
   sign: jest.fn().mockReturnValue('mock.jwt.token'),
   verify: jest.fn(),
-  decode: jest.fn().mockReturnValue({ exp: Math.floor(Date.now() / 1000) + 300 }),
+  decode: jest
+    .fn()
+    .mockReturnValue({ exp: Math.floor(Date.now() / 1000) + 300 }),
 });
 
 const makeMail = () => ({
@@ -51,6 +55,7 @@ const makeMail = () => ({
 
 const makeSms = () => ({
   send: jest.fn().mockResolvedValue(undefined),
+  sendOtp: jest.fn().mockResolvedValue(undefined),
 });
 
 const makeBlacklist = () => ({
@@ -121,7 +126,8 @@ describe('PasswordResetService', () => {
 
       expect(result).toHaveProperty('resetSessionId');
       expect(prisma.db.passwordResetSession.create).toHaveBeenCalledTimes(1);
-      const createArg = prisma.db.passwordResetSession.create.mock.calls[0][0] as {
+      const createArg = prisma.db.passwordResetSession.create.mock
+        .calls[0][0] as {
         data: { userId: string; expiresAt: Date };
       };
       expect(createArg.data.userId).toBe('user-uuid-1');
@@ -141,12 +147,17 @@ describe('PasswordResetService', () => {
 
     it('signs the JWT with the real session id for known accounts', async () => {
       prisma.db.user.findUnique.mockResolvedValue({ id: 'user-uuid-1' });
-      prisma.db.passwordResetSession.create.mockResolvedValue({ id: 'session-uuid-1' });
+      prisma.db.passwordResetSession.create.mockResolvedValue({
+        id: 'session-uuid-1',
+      });
 
       await service.initiate('+237600000001');
 
       expect(jwt.sign).toHaveBeenCalledWith(
-        expect.objectContaining({ sub: 'session-uuid-1', type: 'pwd-reset-session' }),
+        expect.objectContaining({
+          sub: 'session-uuid-1',
+          type: 'pwd-reset-session',
+        }),
         expect.any(Object),
       );
     });
@@ -159,12 +170,19 @@ describe('PasswordResetService', () => {
 
     beforeEach(() => {
       // Default: valid session JWT pointing at a real session row
-      jwt.verify.mockReturnValue({ sub: 'session-uuid-1', type: 'pwd-reset-session' });
-      prisma.db.passwordResetSession.findUnique.mockResolvedValue({ ...baseSession });
+      jwt.verify.mockReturnValue({
+        sub: 'session-uuid-1',
+        type: 'pwd-reset-session',
+      });
+      prisma.db.passwordResetSession.findUnique.mockResolvedValue({
+        ...baseSession,
+      });
     });
 
     it('throws UnauthorizedException for an expired / invalid session JWT', async () => {
-      jwt.verify.mockImplementation(() => { throw new Error('jwt expired'); });
+      jwt.verify.mockImplementation(() => {
+        throw new Error('jwt expired');
+      });
 
       await expect(service.chooseMethod('bad.jwt', 'OTP')).rejects.toThrow(
         UnauthorizedException,
@@ -177,7 +195,7 @@ describe('PasswordResetService', () => {
       const result = await service.chooseMethod(validSessionJwt, 'OTP');
 
       expect(result.message).toMatch(/eligible/i);
-      expect(sms.send).not.toHaveBeenCalled();
+      expect(sms.sendOtp).not.toHaveBeenCalled();
       expect(mail.send).not.toHaveBeenCalled();
     });
 
@@ -186,13 +204,17 @@ describe('PasswordResetService', () => {
 
       await service.chooseMethod(validSessionJwt, 'OTP');
 
-      expect(sms.send).toHaveBeenCalledTimes(1);
-      expect(sms.send).toHaveBeenCalledWith(
-        '+237600000001',
-        expect.stringContaining('reset code'),
+      expect(sms.sendOtp).toHaveBeenCalledTimes(1);
+      expect(sms.sendOtp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phone: '+237600000001',
+          flow: 'password-reset',
+          channel: 'sms',
+        }),
       );
 
-      const updateArg = prisma.db.passwordResetSession.update.mock.calls[0][0] as {
+      const updateArg = prisma.db.passwordResetSession.update.mock
+        .calls[0][0] as {
         data: { method: string; otpHash: string };
       };
       expect(updateArg.data.method).toBe('OTP');
@@ -217,7 +239,8 @@ describe('PasswordResetService', () => {
         expect.stringContaining('reset-password'),
       );
 
-      const updateArg = prisma.db.passwordResetSession.update.mock.calls[0][0] as {
+      const updateArg = prisma.db.passwordResetSession.update.mock
+        .calls[0][0] as {
         data: { method: string; emailTokenHash: string };
       };
       expect(updateArg.data.method).toBe('EMAIL_LINK');
@@ -255,9 +278,9 @@ describe('PasswordResetService', () => {
         usedAt: new Date(),
       });
 
-      await expect(service.chooseMethod(validSessionJwt, 'OTP')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.chooseMethod(validSessionJwt, 'OTP'),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('throws UnauthorizedException for an expired session (expiresAt in the past)', async () => {
@@ -266,9 +289,9 @@ describe('PasswordResetService', () => {
         expiresAt: new Date(Date.now() - 1000),
       });
 
-      await expect(service.chooseMethod(validSessionJwt, 'OTP')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.chooseMethod(validSessionJwt, 'OTP'),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 
@@ -278,11 +301,16 @@ describe('PasswordResetService', () => {
     const validSessionJwt = 'valid.session.jwt';
 
     beforeEach(() => {
-      jwt.verify.mockReturnValue({ sub: 'session-uuid-1', type: 'pwd-reset-session' });
+      jwt.verify.mockReturnValue({
+        sub: 'session-uuid-1',
+        type: 'pwd-reset-session',
+      });
     });
 
     it('throws UnauthorizedException for an invalid / expired session JWT', async () => {
-      jwt.verify.mockImplementation(() => { throw new Error('jwt expired'); });
+      jwt.verify.mockImplementation(() => {
+        throw new Error('jwt expired');
+      });
 
       await expect(service.verifyOtp('bad.jwt', '123456')).rejects.toThrow(
         UnauthorizedException,
@@ -292,9 +320,9 @@ describe('PasswordResetService', () => {
     it('throws UnauthorizedException for a ghost session (sub: null)', async () => {
       jwt.verify.mockReturnValue({ sub: null, type: 'pwd-reset-session' });
 
-      await expect(service.verifyOtp(validSessionJwt, '123456')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.verifyOtp(validSessionJwt, '123456'),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('throws UnauthorizedException for an expired session (expiresAt in the past)', async () => {
@@ -305,9 +333,9 @@ describe('PasswordResetService', () => {
         expiresAt: new Date(Date.now() - 1000),
       });
 
-      await expect(service.verifyOtp(validSessionJwt, '123456')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.verifyOtp(validSessionJwt, '123456'),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('throws on wrong OTP and increments the attempts counter (without consuming session)', async () => {
@@ -320,16 +348,19 @@ describe('PasswordResetService', () => {
         attempts: 0,
       });
 
-      await expect(service.verifyOtp(validSessionJwt, '123456')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.verifyOtp(validSessionJwt, '123456'),
+      ).rejects.toThrow(UnauthorizedException);
 
       // Attempts incremented, session NOT consumed yet
       const updateCall = prisma.db.passwordResetSession.update.mock.calls.find(
-        (c) => (c[0] as { data: { attempts?: number } }).data.attempts !== undefined,
+        (c) =>
+          (c[0] as { data: { attempts?: number } }).data.attempts !== undefined,
       );
       expect(updateCall).toBeDefined();
-      expect((updateCall![0] as { data: { attempts: number } }).data.attempts).toBe(1);
+      expect(
+        (updateCall![0] as { data: { attempts: number } }).data.attempts,
+      ).toBe(1);
 
       // usedAt must NOT be set on a simple wrong guess
       const consumeCall = prisma.db.passwordResetSession.update.mock.calls.find(
@@ -348,16 +379,18 @@ describe('PasswordResetService', () => {
         attempts: 4, // 5th attempt will push it to lockout
       });
 
-      await expect(service.verifyOtp(validSessionJwt, '123456')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.verifyOtp(validSessionJwt, '123456'),
+      ).rejects.toThrow(UnauthorizedException);
 
       // Session must be consumed (usedAt set)
       const consumeCall = prisma.db.passwordResetSession.update.mock.calls.find(
         (c) => (c[0] as { data: { usedAt?: Date } }).data.usedAt !== undefined,
       );
       expect(consumeCall).toBeDefined();
-      expect((consumeCall![0] as { data: { usedAt: Date } }).data.usedAt).toBeInstanceOf(Date);
+      expect(
+        (consumeCall![0] as { data: { usedAt: Date } }).data.usedAt,
+      ).toBeInstanceOf(Date);
     });
 
     it('throws immediately when attempts are already at MAX (>= 5) before checking code', async () => {
@@ -368,9 +401,9 @@ describe('PasswordResetService', () => {
         attempts: 5,
       });
 
-      await expect(service.verifyOtp(validSessionJwt, '123456')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.verifyOtp(validSessionJwt, '123456'),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('succeeds with correct OTP, consumes session, and returns a resetToken', async () => {
@@ -397,7 +430,10 @@ describe('PasswordResetService', () => {
 
       // resetToken must be signed with correct payload
       expect(jwt.sign).toHaveBeenCalledWith(
-        expect.objectContaining({ sub: 'session-uuid-1', type: 'pwd-reset-token' }),
+        expect.objectContaining({
+          sub: 'session-uuid-1',
+          type: 'pwd-reset-token',
+        }),
         expect.any(Object),
       );
     });
@@ -421,7 +457,10 @@ describe('PasswordResetService', () => {
 
       expect(result).toHaveProperty('resetToken');
       expect(jwt.sign).toHaveBeenCalledWith(
-        expect.objectContaining({ sub: 'session-uuid-1', type: 'pwd-reset-token' }),
+        expect.objectContaining({
+          sub: 'session-uuid-1',
+          type: 'pwd-reset-token',
+        }),
         expect.any(Object),
       );
     });
@@ -482,7 +521,10 @@ describe('PasswordResetService', () => {
   describe('complete', () => {
     beforeEach(() => {
       // Default: valid resetToken JWT pointing at a consumed session
-      jwt.verify.mockReturnValue({ sub: 'session-uuid-1', type: 'pwd-reset-token' });
+      jwt.verify.mockReturnValue({
+        sub: 'session-uuid-1',
+        type: 'pwd-reset-token',
+      });
       prisma.db.passwordResetSession.findUnique.mockResolvedValue({
         ...baseSession,
         usedAt: new Date(), // must be consumed (set by verifyOtp/verifyEmailToken)
@@ -496,7 +538,9 @@ describe('PasswordResetService', () => {
     });
 
     it('throws UnauthorizedException for an invalid / expired resetToken', async () => {
-      jwt.verify.mockImplementation(() => { throw new Error('jwt expired'); });
+      jwt.verify.mockImplementation(() => {
+        throw new Error('jwt expired');
+      });
 
       await expect(
         service.complete('bad.token', 'NewPass123', 'NewPass123'),
@@ -548,7 +592,11 @@ describe('PasswordResetService', () => {
     });
 
     it('updates the password hash with a bcrypt hash on success', async () => {
-      await service.complete('mock.jwt.token', 'SecureNewPass1', 'SecureNewPass1');
+      await service.complete(
+        'mock.jwt.token',
+        'SecureNewPass1',
+        'SecureNewPass1',
+      );
 
       expect(prisma.db.user.update).toHaveBeenCalledWith({
         where: { id: 'user-uuid-1' },
@@ -558,14 +606,25 @@ describe('PasswordResetService', () => {
     });
 
     it('revokes the resetToken via TokenBlacklistService on success', async () => {
-      await service.complete('mock.jwt.token', 'SecureNewPass1', 'SecureNewPass1');
+      await service.complete(
+        'mock.jwt.token',
+        'SecureNewPass1',
+        'SecureNewPass1',
+      );
 
       expect(blacklist.revoke).toHaveBeenCalledTimes(1);
-      expect(blacklist.revoke).toHaveBeenCalledWith('mock.jwt.token', expect.any(Number));
+      expect(blacklist.revoke).toHaveBeenCalledWith(
+        'mock.jwt.token',
+        expect.any(Number),
+      );
     });
 
     it('sends SMS and email notifications on success', async () => {
-      await service.complete('mock.jwt.token', 'SecureNewPass1', 'SecureNewPass1');
+      await service.complete(
+        'mock.jwt.token',
+        'SecureNewPass1',
+        'SecureNewPass1',
+      );
 
       expect(sms.send).toHaveBeenCalledTimes(1);
       expect(sms.send).toHaveBeenCalledWith(
@@ -589,7 +648,11 @@ describe('PasswordResetService', () => {
         firstName: 'Jane',
       });
 
-      await service.complete('mock.jwt.token', 'SecureNewPass1', 'SecureNewPass1');
+      await service.complete(
+        'mock.jwt.token',
+        'SecureNewPass1',
+        'SecureNewPass1',
+      );
 
       expect(sms.send).toHaveBeenCalledTimes(1);
       expect(mail.send).not.toHaveBeenCalled();

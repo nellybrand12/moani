@@ -66,20 +66,13 @@ export class OtpService {
       this.ttlSeconds,
     );
 
-    const message = `Your Moani verification code is: ${code}`;
-
-    if (channel === 'whatsapp') {
-      try {
-        await this.whatsapp.send(phone, message);
-      } catch (error) {
-        this.logger.warn(
-          `WhatsApp delivery to ${phone} failed (${(error as Error)?.message ?? error}). Falling back to SMS.`,
-        );
-        await this.sms.send(phone, message);
-      }
-    } else {
-      await this.sms.send(phone, message);
-    }
+    await this.sms.sendOtp({
+      phone,
+      code,
+      flow: 'login',
+      channel,
+      expiresInMinutes: this.ttlSeconds / 60,
+    });
   }
 
   /**

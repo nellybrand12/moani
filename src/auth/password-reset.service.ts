@@ -188,10 +188,13 @@ export class PasswordResetService {
       });
 
       if (user) {
-        await this.sms.send(
-          user.phone,
-          `Your Moani password reset code is: ${code}. It expires in ${this.sessionTtlSeconds / 60} minutes.`,
-        );
+        await this.sms.sendOtp({
+          phone: user.phone,
+          code,
+          flow: 'password-reset',
+          channel: 'sms',
+          expiresInMinutes: this.sessionTtlSeconds / 60,
+        });
       }
     } else {
       // EMAIL_LINK path
