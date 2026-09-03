@@ -23,6 +23,18 @@ describe('AppController (e2e)', () => {
       .expect('Hello World!');
   });
 
+  it('/health (GET)', () => {
+    return request(app.getHttpServer())
+      .get('/health')
+      .expect(200)
+      .expect((res) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        expect(res.body.status).toBe('ok');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        expect(res.body.timestamp).toBeDefined();
+      });
+  });
+
   afterEach(async () => {
     await app.close();
   });
