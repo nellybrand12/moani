@@ -1,6 +1,6 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Role } from '../../../generated/prisma/client';
-import { AdminGuard } from './admin.guard';
+import { MerchantGuard } from './merchant.guard';
 
 function makeContext(role: Role): ExecutionContext {
   return {
@@ -10,15 +10,15 @@ function makeContext(role: Role): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-describe('AdminGuard', () => {
-  let guard: AdminGuard;
+describe('MerchantGuard', () => {
+  let guard: MerchantGuard;
 
   beforeEach(() => {
-    guard = new AdminGuard();
+    guard = new MerchantGuard();
   });
 
-  it('returns true for ADMIN role', () => {
-    expect(guard.canActivate(makeContext(Role.ADMIN))).toBe(true);
+  it('returns true for MERCHANT role', () => {
+    expect(guard.canActivate(makeContext(Role.MERCHANT))).toBe(true);
   });
 
   it('throws ForbiddenException for USER role', () => {
@@ -27,8 +27,8 @@ describe('AdminGuard', () => {
     );
   });
 
-  it('throws ForbiddenException for MERCHANT role', () => {
-    expect(() => guard.canActivate(makeContext(Role.MERCHANT))).toThrow(
+  it('throws ForbiddenException for ADMIN role', () => {
+    expect(() => guard.canActivate(makeContext(Role.ADMIN))).toThrow(
       ForbiddenException,
     );
   });

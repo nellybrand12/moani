@@ -41,4 +41,16 @@ describe('UserAccessGuard', () => {
       guard.canActivate(makeContext('user-1', Role.USER, 'user-2')),
     ).toThrow(ForbiddenException);
   });
+
+  it('allows a MERCHANT to access their own :id', () => {
+    expect(
+      guard.canActivate(makeContext('merchant-1', Role.MERCHANT, 'merchant-1')),
+    ).toBe(true);
+  });
+
+  it('throws ForbiddenException when MERCHANT tries to access another :id', () => {
+    expect(() =>
+      guard.canActivate(makeContext('merchant-1', Role.MERCHANT, 'user-2')),
+    ).toThrow(ForbiddenException);
+  });
 });

@@ -600,7 +600,6 @@ describe('PasswordResetService', () => {
 
       expect(prisma.db.user.update).toHaveBeenCalledWith({
         where: { id: 'user-uuid-1' },
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: { passwordHash: expect.stringMatching(/^\$2[ab]\$/) },
       });
     });

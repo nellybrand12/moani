@@ -17,7 +17,7 @@ export class UserEntity {
   firstName: string;
   lastName: string;
   profilePicture: string | null;
-  dateOfBirth: Date;
+  dateOfBirth: Date | null;
   role: Role;
   createdAt: Date;
   updatedAt: Date;
@@ -26,7 +26,7 @@ export class UserEntity {
   passwordHash: string;
 
   @Exclude()
-  transactionPinHash: string;
+  transactionPinHash: string | null;
 
   constructor(partial: Partial<UserEntity>) {
     Object.assign(this, partial);

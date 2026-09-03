@@ -16,9 +16,10 @@ interface RequestParams {
 }
 
 /**
- * UserAccessGuard — allows ADMIN unconditionally, or a user accessing
+ * UserAccessGuard — allows ADMIN unconditionally, or a user/merchant accessing
  * their own resource (request.user.id === request.params.id).
  *
+ * Neither USER nor MERCHANT has unconditional access to other resources.
  * Assumes JwtAuthGuard has already run and populated request.user.
  * Apply at the method level on any :id-scoped route.
  */

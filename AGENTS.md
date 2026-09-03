@@ -37,8 +37,14 @@ Do not load any skill by default. Check the task first — only invoke a skill i
 - `/sync` — keep durable knowledge, `AGENTS.md`, and specs synchronized around merge
 - `/audit` — scan and bootstrap or gap-fill `AGENTS.md` context files
 - `prisma-*` — reference for Prisma ORM CLI, queries, migrations, and PostgreSQL configuration
+- `/review` — when a feature is done and needs a production check
+- `/recover` — when something is broken and the fix isn't obvious
+- `/remember` — at the start of a new session to restore context,
+  and at the end to save progress
 
 ## Session continuity
 
-- At session start: read `AGENTS.md` and active specs in `docs/specs/` to restore full project context.
-- At milestone / merge completion: run `/sync` to keep durable knowledge and context files up to date.
+REQUIRED — do not skip, do not wait to be asked:
+
+- **First action of every session:** run `/remember restore` before doing anything else.
+- **Last action of every session:** run `/remember save` before closing.

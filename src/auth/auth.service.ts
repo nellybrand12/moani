@@ -8,7 +8,9 @@ import * as bcrypt from 'bcrypt';
 import { TokenBlacklistService } from '../lib/token-blacklist/token-blacklist.service';
 import { PrismaService } from '../lib/database/prisma/prisma.service';
 import { UserEntity } from '../users/entities/user.entity';
+import type { AdminRegisterDto } from './dto/admin-register.dto';
 import type { LoginDto } from './dto/login.dto';
+import type { MerchantRegisterDto } from './dto/merchant-register.dto';
 import type { RegisterDto } from './dto/register.dto';
 import type { SendOtpDto } from './dto/send-otp.dto';
 import type { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -93,23 +95,111 @@ export class AuthService {
   }
 
   /**
-   * Authenticates via phone + password.
+   * Registers a new admin after OTP verification.
    *
-   * Returns the same error for "phone not found" and "wrong password"
-   * to prevent phone enumeration attacks.
+   * Creates a User with role=ADMIN and an associated AdminProfile.
+   * No dateOfBirth or transactionPin required.
+   */
+  async registerAdmin(
+    dto: AdminRegisterDto,
+  ): Promise<{ accessToken: string; user: UserEntity }> {
+    await this.assertPhoneAvailable(dto.phone);
+    await this.assertEmailAvailable(dto.email);
+
+    // OTP must verify before any DB write
+    await this.otpService.verify(dto.phone, dto.otp);
+
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+
+    const user = await this.prisma.db.user.create({
+      data: {
+        phone: dto.phone,
+        isPhoneVerified: true,
+        email: dto.email,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        passwordHash,
+        role: 'ADMIN',
+        adminProfile: {
+          create: {
+            department: dto.department ?? null,
+            permissionsLevel: dto.permissionsLevel ?? 1,
+          },
+        },
+      },
+    });
+
+    const accessToken = this.signToken(user.id, user.role);
+    return { accessToken, user: new UserEntity(user) };
+  }
+
+  /**
+   * Registers a new merchant owner after OTP verification.
+   *
+   * Creates a User with role=MERCHANT and an associated MerchantOwnerProfile
+   * with kycStatus=PENDING. No transactionPin required.
+   */
+  async registerMerchant(
+    dto: MerchantRegisterDto,
+  ): Promise<{ accessToken: string; user: UserEntity }> {
+    await this.assertPhoneAvailable(dto.phone);
+    if (dto.email) {
+      await this.assertEmailAvailable(dto.email);
+    }
+
+    // OTP must verify before any DB write
+    await this.otpService.verify(dto.phone, dto.otp);
+
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+
+    const user = await this.prisma.db.user.create({
+      data: {
+        phone: dto.phone,
+        isPhoneVerified: true,
+        email: dto.email ?? null,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        passwordHash,
+        dateOfBirth: new Date(dto.dateOfBirth),
+        role: 'MERCHANT',
+        merchantOwnerProfile: {
+          create: {},
+        },
+      },
+    });
+
+    const accessToken = this.signToken(user.id, user.role);
+    return { accessToken, user: new UserEntity(user) };
+  }
+
+  /**
+   * Authenticates via email-or-phone + password.
+   *
+   * If email is provided, the user must have isEmailVerified=true.
+   * Returns the same error for "not found" and "wrong password"
+   * to prevent enumeration attacks.
    */
   async login(
     dto: LoginDto,
   ): Promise<{ accessToken: string; user: UserEntity }> {
-    const user = await this.prisma.db.user.findUnique({
-      where: { phone: dto.phone },
-    });
+    const user = dto.phone
+      ? await this.prisma.db.user.findUnique({ where: { phone: dto.phone } })
+      : await this.prisma.db.user.findUnique({
+          where: { email: dto.email! },
+        });
+
+    // Email login requires prior verification
+    if (dto.email && user && !user.isEmailVerified) {
+      throw new UnauthorizedException(
+        'Email not verified. Please verify your email or log in with your phone number.',
+      );
+    }
 
     const isMatch =
       user !== null && (await bcrypt.compare(dto.password, user.passwordHash));
 
     if (!user || !isMatch) {
-      throw new UnauthorizedException('Invalid phone number or password');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     const accessToken = this.signToken(user.id, user.role);
@@ -133,8 +223,30 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
+  // ── Private helpers ──────────────────────────────────────────────────────
+
   private signToken(sub: string, role: string): string {
     const payload: JwtPayload = { sub, role: role as JwtPayload['role'] };
     return this.jwtService.sign(payload);
+  }
+
+  private async assertPhoneAvailable(phone: string): Promise<void> {
+    const existing = await this.prisma.db.user.findUnique({
+      where: { phone },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException('Phone number is already registered');
+    }
+  }
+
+  private async assertEmailAvailable(email: string): Promise<void> {
+    const existing = await this.prisma.db.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException('Email is already registered');
+    }
   }
 }

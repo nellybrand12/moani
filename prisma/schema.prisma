@@ -12,6 +12,7 @@ datasource db {
 // ── Enums ────────────────────────────────────────────────────────────────────
 enum Role {
   USER
+  MERCHANT
   ADMIN
 }
 
@@ -19,6 +20,44 @@ enum Role {
 enum ResetMethod {
   OTP
   EMAIL_LINK
+}
+
+enum IdDocumentType {
+  NATIONAL_ID
+  PASSPORT
+  DRIVERS_LICENSE
+}
+
+enum KycStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum BusinessType {
+  RETAIL
+  SALON_BARBERSHOP
+  RESTAURANT_FOOD
+  SERVICES
+  TRANSPORT
+  WHOLESALE
+  OTHER
+}
+
+enum BusinessTier {
+  TIER_1
+  TIER_2
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum OperationalStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 // ── Models ───────────────────────────────────────────────────────────────────
@@ -32,13 +71,16 @@ model User {
   lastName           String
   profilePicture     String?  @default("https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png")
   passwordHash       String
-  dateOfBirth        DateTime
-  transactionPinHash String
+  dateOfBirth        DateTime?
+  transactionPinHash String?
   role               Role     @default(USER)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   passwordResetSessions PasswordResetSession[]
+  adminProfile          AdminProfile?
+  merchantOwnerProfile  MerchantOwnerProfile?
+  ownedBusinesses       Business[]
 
   @@map("users")
 }
@@ -66,4 +108,79 @@ model PasswordResetSession {
   createdAt      DateTime     @default(now())
 
   @@map("password_reset_sessions")
+}
+
+/// Records admin actions for compliance and traceability.
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String
+  action      String
+  targetType  String
+  targetId    String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId])
+  @@index([targetId])
+  @@map("audit_logs")
+}
+
+/// Admin profile linked 1:1 to a User with role=ADMIN.
+model AdminProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department       String?
+  permissionsLevel Int      @default(1)
+  createdAt        DateTime @default(now())
+
+  @@map("admin_profiles")
+}
+
+/// Merchant owner KYC profile linked 1:1 to a User with role=MERCHANT.
+/// KYC documents are submitted after account creation; kycStatus tracks
+/// the verification lifecycle.
+model MerchantOwnerProfile {
+  id                String          @id @default(uuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idDocumentType    IdDocumentType?
+  idDocumentNumber  String?
+  idDocumentUrl     String?
+  kycStatus         KycStatus       @default(PENDING)
+  kycSubmittedAt    DateTime?
+  kycVerifiedAt     DateTime?
+  verifiedByAdminId String?
+
+  @@map("merchant_owner_profiles")
+}
+
+/// A business owned by a merchant. One merchant can own many businesses.
+/// Tier 1 = informal/sole-proprietor (owner KYC only).
+/// Tier 2 = formally registered (requires additional KYB documents).
+model Business {
+  id                      String             @id @default(uuid())
+  ownerId                 String
+  owner                   User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  businessName            String
+  businessType            BusinessType
+  businessEmail           String?
+  businessPhone           String?
+  address                 String
+  city                    String
+  tier                    BusinessTier       @default(TIER_1)
+  /// Tier 2-only fields — nullable, unused until Tier 2 logic is built.
+  registrationNumber      String?
+  registrationDocumentUrl String?
+  taxId                   String?
+  verificationStatus      VerificationStatus @default(PENDING)
+  operationalStatus       OperationalStatus  @default(ACTIVE)
+  verifiedAt              DateTime?
+  verifiedByAdminId       String?
+  createdAt               DateTime           @default(now())
+
+  @@index([ownerId])
+  @@index([verificationStatus])
+  @@index([tier])
+  @@map("businesses")
 }

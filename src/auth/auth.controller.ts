@@ -16,10 +16,12 @@ import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { EmailOtpService } from './email-otp.service';
 import { PasswordResetService } from './password-reset.service';
+import { AdminRegisterDto } from './dto/admin-register.dto';
 import { ChooseResetMethodDto } from './dto/choose-reset-method.dto';
 import { CompletePasswordResetDto } from './dto/complete-password-reset.dto';
 import { InitiatePasswordResetDto } from './dto/initiate-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
+import { MerchantRegisterDto } from './dto/merchant-register.dto';
 import { RegisterDto } from './dto/register.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
@@ -54,7 +56,19 @@ export class AuthController {
     return this.authService.register(dto);
   }
 
-  /** POST /auth/login — phone + password → JWT */
+  /** POST /auth/admin/register — OTP-verified admin registration + immediate JWT */
+  @Post('admin/register')
+  registerAdmin(@Body() dto: AdminRegisterDto) {
+    return this.authService.registerAdmin(dto);
+  }
+
+  /** POST /auth/merchant/register — OTP-verified merchant registration + immediate JWT */
+  @Post('merchant/register')
+  registerMerchant(@Body() dto: MerchantRegisterDto) {
+    return this.authService.registerMerchant(dto);
+  }
+
+  /** POST /auth/login — email-or-phone + password → JWT */
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto) {

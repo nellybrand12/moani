@@ -9,7 +9,10 @@ import { MailModule } from './lib/mail/mail.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { RedisModule } from './redis/redis.module';
 import { TokenBlacklistModule } from './lib/token-blacklist/token-blacklist.module';
+import { AuditLogModule } from './lib/audit-log/audit-log.module';
 import { UsersModule } from './users/users.module';
+import { AdminModule } from './module/admin/admin.module';
+import { MerchantModule } from './module/merchant/merchant.module';
 
 @Module({
   imports: [
@@ -17,14 +20,16 @@ import { UsersModule } from './users/users.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 10 }]),
     RedisModule,
     TokenBlacklistModule,
+    AuditLogModule,
     MailModule,
     NotificationsModule,
     PrismaModule,
     UsersModule,
     AuthModule,
+    AdminModule,
+    MerchantModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
-
