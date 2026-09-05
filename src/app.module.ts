@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -17,7 +18,20 @@ import { MerchantModule } from './module/merchant/merchant.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 10 }]),
+    ThrottlerModule.forRoot([
+      {
+        // Global baseline: 100 requests per minute per IP.
+        // Enough for normal usage; individual routes override with stricter limits.
+        //
+        // ⚠️  SCALING NOTE: ThrottlerModule uses in-memory storage by default.
+        //     This works for a single Railway instance. If the app scales to
+        //     multiple replicas, switch to @nestjs/throttler's Redis storage
+        //     (e.g. ThrottlerStorageRedisService with Upstash) so limits sync
+        //     across instances.
+        ttl: 60_000,
+        limit: 100,
+      },
+    ]),
     RedisModule,
     TokenBlacklistModule,
     AuditLogModule,
@@ -30,6 +44,11 @@ import { MerchantModule } from './module/merchant/merchant.module';
     MerchantModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Apply ThrottlerGuard globally — every route inherits the baseline limit
+    // unless overridden with @Throttle() or excluded with @SkipThrottle().
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

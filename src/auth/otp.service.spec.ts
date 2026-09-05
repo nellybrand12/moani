@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { UnauthorizedException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SmsService } from '../notifications/sms.service';
@@ -14,6 +14,7 @@ const makeRedis = () => ({
   get: jest.fn<Promise<string | null>, [string]>(),
   set: jest.fn<Promise<'OK'>, unknown[]>().mockResolvedValue('OK' as const),
   del: jest.fn<Promise<number>, [string]>().mockResolvedValue(1),
+  ttl: jest.fn<Promise<number>, [string]>().mockResolvedValue(-2),
 });
 
 const makeSms = () => ({
@@ -129,6 +130,52 @@ describe('OtpService', () => {
         channel: 'sms',
         expiresInMinutes: 10,
       });
+    });
+
+    // ── 90-second per-phone cooldown ──────────────────────────────────────
+
+    it('sets a 90-second cooldown key after a successful send', async () => {
+      await service.send('+237600000001');
+
+      // The first redis.set call stores the OTP record.
+      // The second call sets the cooldown key.
+      const cooldownCall = redis.set.mock.calls[1];
+      expect(cooldownCall).toBeDefined();
+      expect(cooldownCall[0]).toBe('otp-cooldown:+237600000001');
+      expect(cooldownCall[1]).toBe('1');
+      expect(cooldownCall[2]).toBe('EX');
+      expect(cooldownCall[3]).toBe(90);
+    });
+
+    it('throws ConflictException with retryAfterSeconds when cooldown is active', async () => {
+      // Simulate an active cooldown — TTL returns positive seconds remaining.
+      redis.ttl.mockResolvedValue(47);
+
+      await expect(service.send('+237600000001')).rejects.toThrow(
+        ConflictException,
+      );
+
+      try {
+        await service.send('+237600000001');
+      } catch (e) {
+        const err = e as ConflictException;
+        const response = err.getResponse() as Record<string, unknown>;
+        expect(response.statusCode).toBe(409);
+        expect(response.retryAfterSeconds).toBe(47);
+        expect(response.message).toContain('wait');
+      }
+
+      // OTP should NOT have been generated or sent.
+      expect(sms.sendOtp).not.toHaveBeenCalled();
+    });
+
+    it('allows send when cooldown has expired (TTL <= 0)', async () => {
+      // TTL returns -2 (key does not exist) or -1 (no expiry).
+      redis.ttl.mockResolvedValue(-2);
+
+      await service.send('+237600000001');
+
+      expect(sms.sendOtp).toHaveBeenCalledTimes(1);
     });
   });
 

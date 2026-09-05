@@ -8,6 +8,7 @@ import { PrismaService } from '../lib/database/prisma/prisma.service';
 import { MailService } from '../lib/mail/mail.service';
 import { SmsService } from '../notifications/sms.service';
 import { TokenBlacklistService } from '../lib/token-blacklist/token-blacklist.service';
+import { REDIS_CLIENT } from '../redis/redis.constants';
 import { PasswordResetService } from './password-reset.service';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,6 +64,12 @@ const makeBlacklist = () => ({
   isRevoked: jest.fn().mockReturnValue(false),
 });
 
+const makeRedis = () => ({
+  ttl: jest.fn<Promise<number>, [string]>().mockResolvedValue(-2),
+  set: jest.fn<Promise<'OK'>, unknown[]>().mockResolvedValue('OK' as const),
+  del: jest.fn<Promise<number>, [string]>().mockResolvedValue(1),
+});
+
 const makeConfig = () => ({
   get: jest.fn((key: string) => {
     if (key === 'FRONTEND_URL') return 'http://localhost:3000';
@@ -82,6 +89,7 @@ describe('PasswordResetService', () => {
   let mail: ReturnType<typeof makeMail>;
   let sms: ReturnType<typeof makeSms>;
   let blacklist: ReturnType<typeof makeBlacklist>;
+  let redis: ReturnType<typeof makeRedis>;
 
   beforeEach(async () => {
     prisma = makePrisma();
@@ -89,6 +97,7 @@ describe('PasswordResetService', () => {
     mail = makeMail();
     sms = makeSms();
     blacklist = makeBlacklist();
+    redis = makeRedis();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -99,6 +108,7 @@ describe('PasswordResetService', () => {
         { provide: SmsService, useValue: sms },
         { provide: TokenBlacklistService, useValue: blacklist },
         { provide: ConfigService, useValue: makeConfig() },
+        { provide: REDIS_CLIENT, useValue: redis },
       ],
     }).compile();
 

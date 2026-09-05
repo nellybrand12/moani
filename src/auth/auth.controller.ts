@@ -9,7 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { UsersService } from '../users/users.service';
@@ -40,12 +40,13 @@ export class AuthController {
   /**
    * POST /auth/otp/send
    *
-   * Rate-limited to 3 requests per minute per IP to protect SMS costs.
+   * Rate-limited to 3 requests per 15 minutes per IP to protect SMS costs.
+   * An additional 90-second per-phone cooldown is enforced at the service
+   * layer (OtpService) — returns 409 with retryAfterSeconds if triggered.
    */
   @Post('otp/send')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Throttle({ default: { limit: 3, ttl: 900_000 } })
   sendOtp(@Body() dto: SendOtpDto) {
     return this.authService.sendOtp(dto);
   }
@@ -68,9 +69,15 @@ export class AuthController {
     return this.authService.registerMerchant(dto);
   }
 
-  /** POST /auth/login — email-or-phone + password → JWT */
+  /**
+   * POST /auth/login
+   *
+   * Rate-limited to 5 attempts per 15 minutes per IP to slow credential
+   * stuffing and brute-force attacks.
+   */
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 900_000 } })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
@@ -129,12 +136,11 @@ export class AuthController {
    * Always returns 200 with the same shape, regardless of whether the phone
    * number belongs to a real account (anti-enumeration).
    *
-   * Rate-limited to 3 requests per minute per IP.
+   * Rate-limited to 3 requests per 15 minutes per IP.
    */
   @Post('password-reset/initiate')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Throttle({ default: { limit: 3, ttl: 900_000 } })
   initiatePasswordReset(@Body() dto: InitiatePasswordResetDto) {
     return this.passwordReset.initiate(dto.phoneNumber);
   }
@@ -144,12 +150,15 @@ export class AuthController {
    *
    * Step 2: Choose OTP (SMS) or EMAIL_LINK.
    * Always returns the same generic success message to avoid leaking email
-   * existence/verification status. Rate-limited to 3/min per IP.
+   * existence/verification status.
+   *
+   * Rate-limited to 3 requests per 15 minutes per IP.
+   * A 90-second per-session cooldown is enforced at the service layer for
+   * the OTP path — returns 409 with retryAfterSeconds if triggered.
    */
   @Post('password-reset/method')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Throttle({ default: { limit: 3, ttl: 900_000 } })
   chooseResetMethod(@Body() dto: ChooseResetMethodDto) {
     return this.passwordReset.chooseMethod(dto.resetSessionId, dto.method);
   }
@@ -158,11 +167,13 @@ export class AuthController {
    * POST /auth/password-reset/verify-otp
    *
    * Step 3a: Submit the 6-digit OTP received by SMS.
-   * Rate-limited per session by the service (5 attempts then session locked).
+   * Rate-limited to 5 attempts per 15 minutes per IP.
+   * Additionally rate-limited per session by the service (5 attempts then session locked).
    * On success returns a single-use resetToken.
    */
   @Post('password-reset/verify-otp')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 900_000 } })
   verifyResetOtp(@Body() dto: VerifyResetOtpDto) {
     return this.passwordReset.verifyOtp(dto.resetSessionId, dto.otp);
   }
@@ -189,9 +200,12 @@ export class AuthController {
    * Step 4: Set the new password using the single-use resetToken.
    * Validates password match + policy, updates the hash, invalidates the
    * resetToken, and sends a "password changed" notification.
+   *
+   * Rate-limited to 3 attempts per 15 minutes per IP.
    */
   @Post('password-reset/complete')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 3, ttl: 900_000 } })
   completePasswordReset(@Body() dto: CompletePasswordResetDto) {
     return this.passwordReset.complete(
       dto.resetToken,

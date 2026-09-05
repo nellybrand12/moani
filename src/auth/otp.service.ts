@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -26,12 +27,24 @@ interface OtpRecord {
  * TTL comes from OTP_TTL_MINUTES env var (default 10 minutes).
  *
  * Delivery is supported via WhatsApp and SMS to the user's phone number.
+ *
+ * Rate limiting (two independent layers):
+ *  1. Per-IP:    @Throttle on the controller (3 req / 15 min)
+ *  2. Per-phone: 90-second cooldown enforced here via a separate Redis key.
+ *                Returns 409 (not 429) with `retryAfterSeconds` so the
+ *                mobile app can render an accurate countdown timer.
  */
 @Injectable()
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
   private readonly ttlSeconds: number;
   private readonly maxAttempts = 5;
+
+  /**
+   * Minimum interval between OTP sends for the same phone number.
+   * Independent of the per-IP throttler — both apply simultaneously.
+   */
+  private readonly cooldownSeconds = 90;
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
@@ -46,14 +59,35 @@ export class OtpService {
     return `otp:${phone}`;
   }
 
+  /** Redis key for the per-phone resend cooldown (separate from the OTP key). */
+  private cooldownKey(phone: string): string {
+    return `otp-cooldown:${phone}`;
+  }
+
   /**
    * Generates a 6-digit OTP, hashes it, stores it in Redis with TTL,
    * and sends it to the provided phone number via SMS or WhatsApp.
    *
    * A fresh send always overwrites and un-expires any previous code
    * for this phone — only the newest code is ever valid.
+   *
+   * Enforces a 90-second per-phone cooldown. If the cooldown is active,
+   * throws ConflictException (409) with the remaining seconds so the
+   * mobile app can show "Resend in 0:47".
    */
   async send(phone: string, channel: OtpChannel = 'sms'): Promise<void> {
+    // ── Per-phone cooldown (90 s) ───────────────────────────────────────
+    // This is independent of the per-IP throttler. A user can hit this
+    // even if they haven't exhausted their 3-per-15-min IP allowance.
+    const remainingCooldown = await this.redis.ttl(this.cooldownKey(phone));
+    if (remainingCooldown > 0) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Please wait before requesting another code.',
+        retryAfterSeconds: remainingCooldown,
+      });
+    }
+
     const code = randomInt(100_000, 1_000_000).toString();
     const codeHash = await bcrypt.hash(code, 10);
     const record: OtpRecord = { codeHash, attempts: 0 };
@@ -73,6 +107,15 @@ export class OtpService {
       channel,
       expiresInMinutes: this.ttlSeconds / 60,
     });
+
+    // Set cooldown AFTER successful send — a failed send (e.g. SMS
+    // provider down) should not lock the user out.
+    await this.redis.set(
+      this.cooldownKey(phone),
+      '1',
+      'EX',
+      this.cooldownSeconds,
+    );
   }
 
   /**

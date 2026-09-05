@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  Inject,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -8,6 +10,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, randomInt } from 'crypto';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../redis/redis.constants';
 import { PrismaService } from '../lib/database/prisma/prisma.service';
 import { MailService } from '../lib/mail/mail.service';
 import { SmsService } from '../notifications/sms.service';
@@ -69,6 +73,12 @@ export class PasswordResetService {
   private readonly resetTokenTtlSeconds: number;
   private readonly frontendUrl: string;
 
+  /**
+   * Minimum interval between OTP sends for the same reset session.
+   * Independent of the per-IP throttler — both apply simultaneously.
+   */
+  private readonly cooldownSeconds = 90;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -76,6 +86,7 @@ export class PasswordResetService {
     private readonly sms: SmsService,
     private readonly blacklist: TokenBlacklistService,
     private readonly config: ConfigService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.sessionTtlSeconds =
       Number(
@@ -174,6 +185,19 @@ export class PasswordResetService {
     const session = await this.loadLiveSession(sessionId);
 
     if (method === 'OTP') {
+      // ── Per-session cooldown (90 s) ────────────────────────────────────
+      // Same pattern as OtpService: prevents rapid re-sends while still
+      // allowing up to 3 sends per 15-min window (enforced by @Throttle).
+      const cooldownKey = `pwd-reset-cooldown:${session.id}`;
+      const remainingCooldown = await this.redis.ttl(cooldownKey);
+      if (remainingCooldown > 0) {
+        throw new ConflictException({
+          statusCode: 409,
+          message: 'Please wait before requesting another code.',
+          retryAfterSeconds: remainingCooldown,
+        });
+      }
+
       const code = randomInt(100_000, 1_000_000).toString();
       const otpHash = await bcrypt.hash(code, BCRYPT_ROUNDS);
 
@@ -196,6 +220,10 @@ export class PasswordResetService {
           expiresInMinutes: this.sessionTtlSeconds / 60,
         });
       }
+
+      // Set cooldown AFTER successful send — a failed SMS should not lock
+      // the user out.
+      await this.redis.set(cooldownKey, '1', 'EX', this.cooldownSeconds);
     } else {
       // EMAIL_LINK path
       const user = await this.prisma.db.user.findUnique({
